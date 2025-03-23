@@ -1,0 +1,106 @@
+// Full-Stack Real-time Remote Patient Monitoring Dashboard
+
+import { useState, useEffect } from "react";
+import axios from "axios";
+import io from "socket.io-client";
+
+const socket = io("http://localhost:8000");
+
+const PatientDashboard = () => {
+  const [patientId, setPatientId] = useState("patient123");
+  const [vitals, setVitals] = useState({ heart_rate: 0, spo2: 0, bp: "", temperature: 0 });
+  const [alerts, setAlerts] = useState([]);
+  
+  useEffect(() => {
+    socket.emit("join", patientId);
+    socket.on("vitals_update", (data) => {
+      setVitals(data);
+      checkAlerts(data);
+    });
+    return () => socket.off("vitals_update");
+  }, [patientId]);
+
+  const checkAlerts = (data) => {
+    let newAlerts = [];
+    if (data.heart_rate < 60 || data.heart_rate > 100) newAlerts.push("Abnormal Heart Rate");
+    if (data.spo2 < 92) newAlerts.push("Low Oxygen Level");
+    if (parseFloat(data.temperature) > 38) newAlerts.push("High Temperature");
+    setAlerts(newAlerts);
+  };
+
+  const updateVitals = async () => {
+    await axios.post(`http://localhost:8000/update_vitals/${patientId}`, {
+      heart_rate: Math.floor(Math.random() * 40) + 60,
+      spo2: Math.floor(Math.random() * 10) + 90,
+      bp: "120/80",
+      temperature: (Math.random() * 2 + 36).toFixed(1),
+    });
+  };
+
+  return (
+    <div className="p-4 text-center">
+      <h1 className="text-2xl font-bold">Real-time Patient Monitoring</h1>
+      <div className="mt-4 space-y-2">
+        <p><strong>Heart Rate:</strong> {vitals.heart_rate} BPM</p>
+        <p><strong>SpO₂:</strong> {vitals.spo2}%</p>
+        <p><strong>Blood Pressure:</strong> {vitals.bp}</p>
+        <p><strong>Temperature:</strong> {vitals.temperature}°C</p>
+      </div>
+      <div className="mt-4 text-red-600">
+        {alerts.map((alert, index) => (
+          <p key={index} className="font-bold">⚠ {alert}</p>
+        ))}
+      </div>
+      <button onClick={updateVitals} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded">
+        Simulate New Vitals
+      </button>
+    </div>
+  );
+};
+
+export default PatientDashboard;
+
+// Doctor's Dashboard
+const DoctorDashboard = () => {
+  const [patients, setPatients] = useState([]);
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [vitals, setVitals] = useState(null);
+
+  useEffect(() => {
+    axios.get("http://localhost:8000/patients").then((response) => {
+      setPatients(response.data);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedPatient) {
+      socket.emit("join", selectedPatient);
+      socket.on("vitals_update", (data) => {
+        setVitals(data);
+      });
+    }
+    return () => socket.off("vitals_update");
+  }, [selectedPatient]);
+
+  return (
+    <div className="p-4 text-center">
+      <h1 className="text-2xl font-bold">Doctor's Dashboard</h1>
+      <select onChange={(e) => setSelectedPatient(e.target.value)} className="mt-4 p-2 border">
+        <option value="">Select a Patient</option>
+        {patients.map((patient) => (
+          <option key={patient.id} value={patient.id}>{patient.name}</option>
+        ))}
+      </select>
+      {vitals && (
+        <div className="mt-4 space-y-2">
+          <p><strong>Heart Rate:</strong> {vitals.heart_rate} BPM</p>
+          <p><strong>SpO₂:</strong> {vitals.spo2}%</p>
+          <p><strong>Blood Pressure:</strong> {vitals.bp}</p>
+          <p><strong>Temperature:</strong> {vitals.temperature}°C</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export { DoctorDashboard };
